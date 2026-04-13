@@ -16,3 +16,9 @@ class Transaction(TransactionBase):
 
     class Config:
         orm_mode = True
+
+class ChatMessage(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    response: str

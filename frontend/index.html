@@ -64,6 +64,32 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- Chat Widget -->
+        <div id="chat-widget" class="chat-widget">
+            <div class="chat-header">
+                <h3>💬 AI Assistant</h3>
+                <button id="chat-close" class="chat-close">✕</button>
+            </div>
+            <div id="chat-messages" class="chat-messages">
+                <div class="chat-message bot-message">
+                    <p>Hi! 👋 I can help you manage your transactions. Try saying things like:</p>
+                    <ul>
+                        <li>"Add an income of $500 for consulting"</li>
+                        <li>"Show me my summary"</li>
+                        <li>"List all transactions"</li>
+                        <li>"Delete transaction 5"</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Ask me anything..." class="chat-input">
+                <button id="chat-send" class="chat-send">Send</button>
+            </div>
+        </div>
+
+        <!-- Chat Toggle Button -->
+        <button id="chat-toggle" class="chat-toggle">💬</button>
     </div>
     <script src="/static/script.js"></script>
 </body>

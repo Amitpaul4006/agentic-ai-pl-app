@@ -1,7 +1,9 @@
 const API_URL = '/api/transactions/';
+const CHAT_API_URL = '/api/chat';
 
 document.addEventListener('DOMContentLoaded', () => {
     fetchTransactions();
+    initializeChat();
 
     const form = document.getElementById('transaction-form');
     form.addEventListener('submit', async (e) => {
@@ -33,6 +35,96 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+// Chat Widget Functions
+function initializeChat() {
+    const chatToggle = document.getElementById('chat-toggle');
+    const chatClose = document.getElementById('chat-close');
+    const chatSend = document.getElementById('chat-send');
+    const chatInput = document.getElementById('chat-input');
+    const chatWidget = document.getElementById('chat-widget');
+
+    // Toggle chat widget
+    chatToggle.addEventListener('click', () => {
+        chatWidget.classList.toggle('active');
+        if (chatWidget.classList.contains('active')) {
+            chatInput.focus();
+        }
+    });
+
+    // Close chat widget
+    chatClose.addEventListener('click', () => {
+        chatWidget.classList.remove('active');
+    });
+
+    // Send message on button click
+    chatSend.addEventListener('click', () => {
+        sendChatMessage();
+    });
+
+    // Send message on Enter key
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendChatMessage();
+        }
+    });
+}
+
+async function sendChatMessage() {
+    const chatInput = document.getElementById('chat-input');
+    const message = chatInput.value.trim();
+
+    if (!message) return;
+
+    // Add user message to chat
+    addChatMessage('user', message);
+    chatInput.value = '';
+    chatInput.focus();
+
+    try {
+        const response = await fetch(CHAT_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message }),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            addChatMessage('bot', data.response);
+            
+            // Refresh transactions in case they were modified
+            fetchTransactions();
+        } else {
+            console.error('Error getting chat response');
+            addChatMessage('bot', '❌ Sorry, I encountered an error. Please try again.');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        addChatMessage('bot', '❌ Connection error. Please try again.');
+    }
+}
+
+function addChatMessage(sender, text) {
+    const chatMessages = document.getElementById('chat-messages');
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `chat-message ${sender}-message`;
+    
+    const messageText = document.createElement('p');
+    messageText.textContent = text;
+    
+    messageDiv.appendChild(messageText);
+    chatMessages.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Refresh transactions after bot responds
+    if (sender === 'bot') {
+        fetchTransactions();
+    }
+}
 
 async function fetchTransactions() {
     try {
