@@ -10,7 +10,7 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 class ChatService:
     def __init__(self):
-        self.model = genai.GenerativeModel("gemini-pro")
+        self.model = genai.GenerativeModel("gemini-2.5-flash")
         
     def get_db_session(self):
         return database.SessionLocal()
