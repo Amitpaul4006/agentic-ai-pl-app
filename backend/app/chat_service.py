@@ -2,6 +2,7 @@ import google.generativeai as genai
 from typing import Optional
 import os
 import json
+import re
 from datetime import datetime
 from . import models, database
 
@@ -82,94 +83,84 @@ class ChatService:
     def process_chat(self, user_message: str) -> str:
         """Process user message with Gemini and call appropriate tools."""
         
-        # Build tools definition for Gemini
-        tools_definition = """
-You have access to the following functions to manage P&L transactions:
-
-1. add_transaction(description, amount, type, date=None)
-   - Adds a new transaction
-   - type: "income" or "expense"
-   - date: optional, format "YYYY-MM-DD"
-   - Returns: confirmation message
-
-2. get_summary()
-   - Returns total income, expenses, and net profit/loss
-   - No parameters needed
-
-3. get_transactions()
-   - Returns list of all transactions
-   - No parameters needed
-
-4. delete_transaction(transaction_id)
-   - Deletes a transaction by ID
-   - Returns: confirmation and updated summary
-
-When the user asks to:
-- Add/record a transaction: Use add_transaction
-- See summary/P&L: Use get_summary
-- List all transactions: Use get_transactions
-- Delete/remove a transaction: Use delete_transaction
-
-Always respond in a friendly, conversational manner. Extract dates, amounts, and descriptions from user input intelligently.
-If the user's request is ambiguous, ask for clarification.
-"""
-
-        # Create a conversation with Gemini
+        # Extract intent and parameters more directly
         try:
-            # Add context about available tools
-            full_prompt = f"""{tools_definition}
+            prompt = f"""You are a financial assistant for managing P&L transactions.
 
-User: {user_message}
+The user said: "{user_message}"
 
-Based on the user's request, decide which function(s) to call and what parameters to use.
-Respond with EITHER:
-1. A JSON object with "action" and "params" keys if you need to call a function
-2. A friendly message if no function is needed or for clarifications
+You have these functions available:
+1. add_transaction(description, amount, type, date) - Add income or expense. type is "income" or "expense". date format is YYYY-MM-DD.
+2. get_summary() - Get income, expenses, and net P&L
+3. get_transactions() - List all transactions
+4. delete_transaction(transaction_id) - Delete a transaction by its ID
 
-For function calls, respond ONLY with valid JSON like:
-{{"action": "add_transaction", "params": {{"description": "...", "amount": 100.0, "type": "income"}}}}
+Based on what the user wants, respond with ONLY a JSON object (no other text):
+- If adding transaction: {{"action": "add_transaction", "params": {{"description": "...", "amount": 123.45, "type": "income", "date": "2026-04-14"}}}}
+- If getting summary: {{"action": "get_summary", "params": {{}}}}
+- If listing transactions: {{"action": "get_transactions", "params": {{}}}}
+- If deleting: {{"action": "delete_transaction", "params": {{"transaction_id": 5}}}}
+- If unsure or clarification needed: {{"action": "clarify", "params": {{"message": "..."}}}}
 
-{{"action": "get_summary", "params": {{}}}}
-
-{{"action": "get_transactions", "params": {{}}}}
-
-{{"action": "delete_transaction", "params": {{"transaction_id": 1}}}}
-
-For non-function responses, respond with plain text."""
+IMPORTANT: Respond ONLY with valid JSON, nothing else."""
 
             response = self.model.generate_content(
-                full_prompt,
+                prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.7,
-                    max_output_tokens=1024,
+                    temperature=0.3,  # Lower temperature for more consistent JSON
+                    max_output_tokens=500,
                 )
             )
             
             response_text = response.text.strip()
             
-            # Try to parse as JSON for function calls
+            # Try to parse as JSON
             try:
-                if response_text.startswith("{") and response_text.endswith("}"):
-                    data = json.loads(response_text)
-                    action = data.get("action")
-                    params = data.get("params", {})
-                    
-                    # Execute the appropriate function
-                    if action == "add_transaction":
-                        return self.add_transaction(**params)
-                    elif action == "get_summary":
-                        return self.get_summary()
-                    elif action == "get_transactions":
-                        return self.get_transactions()
-                    elif action == "delete_transaction":
-                        return self.delete_transaction(**params)
-                    else:
-                        return response_text
+                # Find JSON in response (in case there's extra text)
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    data = json.loads(json_str)
                 else:
-                    return response_text
-            except json.JSONDecodeError:
-                # Not JSON, return as regular response
-                return response_text
+                    data = json.loads(response_text)
+                
+                action = data.get("action")
+                params = data.get("params", {})
+                
+                # Execute the appropriate function
+                if action == "add_transaction":
+                    return self.add_transaction(**params)
+                elif action == "get_summary":
+                    return self.get_summary()
+                elif action == "get_transactions":
+                    return self.get_transactions()
+                elif action == "delete_transaction":
+                    return self.delete_transaction(**params)
+                elif action == "clarify":
+                    return params.get("message", "I didn't understand. Please try again.")
+                else:
+                    return f"Unknown action: {action}. Please try again."
+                    
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, try to understand the intent from the text
+                lower_msg = user_message.lower()
+                
+                if "summary" in lower_msg or "total" in lower_msg or "profit" in lower_msg or "loss" in lower_msg:
+                    return self.get_summary()
+                elif "list" in lower_msg or "show" in lower_msg or "all" in lower_msg or "transaction" in lower_msg:
+                    return self.get_transactions()
+                elif "delete" in lower_msg or "remove" in lower_msg:
+                    # Try to extract transaction ID
+                    match = re.search(r'\d+', user_message)
+                    if match:
+                        transaction_id = int(match.group())
+                        return self.delete_transaction(transaction_id)
+                    else:
+                        return "🤔 Could you please specify which transaction ID to delete?"
+                elif "add" in lower_msg or "income" in lower_msg or "expense" in lower_msg:
+                    return "📝 I need more details: Please specify the amount, description, and whether it's income or expense."
+                else:
+                    return f"🤔 I'm not sure what you're asking. Here's what I can help with:\n- Add a transaction\n- Show summary\n- List all transactions\n- Delete a transaction\n\nFull response: {response_text}"
                 
         except Exception as e:
             return f"✗ Error processing request: {str(e)}"
